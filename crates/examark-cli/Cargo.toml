@@ -1,0 +1,12 @@
+[package]
+name = "examark-cli"
+description = "examark 命令行工具：build/watch/preview"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "examark"
+path = "src/main.rs"
+
+[dependencies]
+examark-syntax.workspace = true
