@@ -69,12 +69,12 @@ fn render_header(html: &mut Html, document: &Document) {
 
 fn render_section(html: &mut Html, section: &Section) {
     html.open("<section class=\"module\">");
-    html.line(&format!("<h2>{}</h2>", escape(&section.module)));
+    html.line(&format!("<h2>{}</h2>", escape(section.module.name())));
 
-    if let Some(sub_category) = &section.sub_category {
+    if let Some(sub_category) = section.sub_category {
         html.line(&format!(
             "<h3 class=\"sub-category\">{}</h3>",
-            escape(sub_category)
+            escape(sub_category.name())
         ));
     }
 

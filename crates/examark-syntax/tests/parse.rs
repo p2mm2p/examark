@@ -2,7 +2,7 @@
 //!
 //! 语法：`@module` 顶格，其下每深一级缩进 2 个空格；内容行比它的关键字深一级。
 
-use examark_syntax::{Choice, Document, ParseError, parse};
+use examark_syntax::{Choice, Document, Module, ParseError, SubCategory, parse};
 
 fn parse_ok(source: &str) -> Document {
     parse(source).expect("文档应解析成功")
@@ -52,8 +52,8 @@ fn parses_metadata_sections_and_questions() {
     assert_eq!(document.sections.len(), 1);
 
     let section = &document.sections[0];
-    assert_eq!(section.module, "言语理解与表达");
-    assert_eq!(section.sub_category.as_deref(), Some("逻辑填空"));
+    assert_eq!(section.module, Module::VerbalComprehension);
+    assert_eq!(section.sub_category, Some(SubCategory::LogicalFill));
     assert_eq!(section.questions.len(), 1);
 
     let question = &section.questions[0];
@@ -92,6 +92,128 @@ fn metadata_and_sub_category_are_optional() {
     assert_eq!(document.metadata.title, None);
     assert_eq!(document.sections[0].sub_category, None);
     assert_eq!(document.sections[0].questions[0].explanation, None);
+}
+
+/// 一份最小合法文档：声明模块与（可选）子分类，带一道单选题。
+fn document_with(module: &str, sub_category: Option<&str>) -> String {
+    let sub_category = sub_category
+        .map(|name| format!("  @subcategory {name}\n"))
+        .unwrap_or_default();
+
+    format!(
+        "@module {module}\n{sub_category}\n  @question\n    @stem 题干。\n    @option A 甲\n    @option B 乙\n    @option C 丙\n    @option D 丁\n    @answer A\n"
+    )
+}
+
+#[test]
+fn the_official_two_level_classification_is_closed() {
+    let expected = [
+        (
+            Module::VerbalComprehension,
+            &["逻辑填空", "片段阅读", "语句表达"][..],
+        ),
+        (
+            Module::JudgmentReasoning,
+            &["图形推理", "定义判断", "类比推理", "逻辑判断"][..],
+        ),
+        (Module::QuantitativeRelations, &["数学运算", "数字推理"][..]),
+        (Module::DataAnalysis, &[][..]),
+    ];
+
+    let modules = expected
+        .iter()
+        .map(|(module, _)| *module)
+        .collect::<Vec<_>>();
+    assert_eq!(Module::ALL.to_vec(), modules);
+
+    for (module, names) in expected {
+        let sub_categories = module
+            .sub_categories()
+            .iter()
+            .map(|sub_category| sub_category.name())
+            .collect::<Vec<_>>();
+
+        assert_eq!(sub_categories, names, "{}", module.name());
+        for sub_category in module.sub_categories() {
+            assert_eq!(sub_category.module(), module, "{}", sub_category.name());
+        }
+    }
+}
+
+#[test]
+fn accepts_every_official_module_and_sub_category() {
+    for module in Module::ALL {
+        let cases: Vec<Option<SubCategory>> = if module.sub_categories().is_empty() {
+            vec![None]
+        } else {
+            module.sub_categories().iter().copied().map(Some).collect()
+        };
+
+        for expected in cases {
+            let source = document_with(module.name(), expected.map(SubCategory::name));
+            let document = parse_ok(&source);
+
+            assert_eq!(document.sections[0].module, module, "{source}");
+            assert_eq!(document.sections[0].sub_category, expected, "{source}");
+        }
+    }
+}
+
+#[test]
+fn unknown_module_is_an_error() {
+    let error = parse_err("@module 常识判断\n");
+
+    assert_eq!(error.line(), 1);
+    assert!(error.message().contains("常识判断"), "{}", error.message());
+    assert!(
+        error.message().contains("言语理解与表达"),
+        "错误应列出官方模块：{}",
+        error.message()
+    );
+}
+
+#[test]
+fn sub_category_of_another_module_is_an_error() {
+    let error = parse_err(&document_with("数量关系", Some("片段阅读")));
+
+    assert_eq!(error.line(), 2);
+    assert!(error.message().contains("片段阅读"), "{}", error.message());
+    assert!(
+        error.message().contains("言语理解与表达"),
+        "错误应指出子分类所属的模块：{}",
+        error.message()
+    );
+    assert!(
+        error.message().contains("数量关系"),
+        "错误应指出所在的模块分节：{}",
+        error.message()
+    );
+}
+
+#[test]
+fn unknown_sub_category_is_an_error() {
+    let error = parse_err(&document_with("数量关系", Some("速算技巧")));
+
+    assert_eq!(error.line(), 2);
+    assert!(error.message().contains("速算技巧"), "{}", error.message());
+    assert!(
+        error.message().contains("数学运算"),
+        "错误应列出该模块的官方子分类：{}",
+        error.message()
+    );
+}
+
+#[test]
+fn data_analysis_rejects_any_sub_category() {
+    let error = parse_err(&document_with("资料分析", Some("统计图")));
+
+    assert_eq!(error.line(), 2);
+    assert!(error.message().contains("统计图"), "{}", error.message());
+    assert!(
+        error.message().contains("资料分析"),
+        "错误应指出该模块没有子分类：{}",
+        error.message()
+    );
 }
 
 #[test]
@@ -191,7 +313,7 @@ fn accepts_a_utf8_bom() {
 
     let document = parse_ok(source);
 
-    assert_eq!(document.sections[0].module, "资料分析");
+    assert_eq!(document.sections[0].module, Module::DataAnalysis);
 }
 
 #[test]

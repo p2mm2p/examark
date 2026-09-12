@@ -1,5 +1,7 @@
 //! examark 文档的抽象语法树。
 
+use crate::category::{Module, SubCategory};
+
 /// 一份题目文档。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Document {
@@ -57,15 +59,13 @@ impl Metadata {
     }
 }
 
-/// 模块分节：声明一次模块，承载若干题目。
-///
-/// 模块与子分类是固定的封闭枚举，其校验由后续工作补齐；当前承载声明的原文。
+/// 模块分节：声明一次模块，承载若干题目。同一模块可占多个分节。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Section {
-    /// 分节声明的模块名。
-    pub module: String,
-    /// 子分类；作者未声明时为 `None`。
-    pub sub_category: Option<String>,
+    /// 分节声明的模块。
+    pub module: Module,
+    /// 子分类；作者未声明、或该模块本就没有子分类时为 `None`。
+    pub sub_category: Option<SubCategory>,
     /// 本节内的题目，按文档顺序。
     pub questions: Vec<Question>,
 }

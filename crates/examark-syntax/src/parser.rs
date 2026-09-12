@@ -4,8 +4,8 @@
 //!
 //! ```text
 //! @title 题名              ← 元数据（缩进 0，键封闭）
-//! @module 模块名            ← 模块分节（缩进 0）
-//!   @subcategory 子分类      ← 可选，必须在题目之前
+//! @module 模块名            ← 模块分节（缩进 0，模块封闭）
+//!   @subcategory 子分类      ← 可选，必须在题目之前；须属于本节模块（子分类封闭）
 //!   @question              ← 题目（缩进 2）
 //!     @stem 题干首行         ← 字段（缩进 4）
 //!       题干续行             ← 内容行（缩进 6）
@@ -17,6 +17,7 @@
 //! 缩进是结构的一部分：每层 2 个空格，内容行必须比它的关键字深一级，回退必须命中已有的层级列。
 
 use crate::ast::{Choice, Document, Metadata, Question, Section};
+use crate::category::{Module, SubCategory};
 use crate::error::ParseError;
 
 /// 每层缩进的空格数。
@@ -186,11 +187,13 @@ impl<'a> Parser<'a> {
                     if name.is_empty() {
                         return Err(ParseError::new(line.number, "模块分节缺少模块名"));
                     }
+                    let Some(module) = Module::from_name(name) else {
+                        return Err(ParseError::new(line.number, unknown_module_message(name)));
+                    };
 
                     let header = line.number;
-                    let name = name.to_string();
                     self.index += 1;
-                    sections.push(self.parse_section(&name, header)?);
+                    sections.push(self.parse_section(module, header)?);
                 }
                 "subcategory" | "question" => {
                     return Err(ParseError::new(
@@ -219,7 +222,7 @@ impl<'a> Parser<'a> {
         Ok(sections)
     }
 
-    fn parse_section(&mut self, module: &str, header: usize) -> Result<Section, ParseError> {
+    fn parse_section(&mut self, module: Module, header: usize) -> Result<Section, ParseError> {
         let mut sub_category = None;
         let mut questions = Vec::new();
 
@@ -259,7 +262,28 @@ impl<'a> Parser<'a> {
                         return Err(ParseError::new(line.number, "「@subcategory」缺少子分类名"));
                     }
 
-                    sub_category = Some(name.to_string());
+                    match SubCategory::from_name(name) {
+                        Some(declared) if declared.module() == module => {
+                            sub_category = Some(declared);
+                        }
+                        Some(declared) => {
+                            return Err(ParseError::new(
+                                line.number,
+                                format!(
+                                    "子分类「{name}」属于「{}」，不能用在「{}」模块分节里",
+                                    declared.module().name(),
+                                    module.name()
+                                ),
+                            ));
+                        }
+                        None => {
+                            return Err(ParseError::new(
+                                line.number,
+                                unknown_sub_category_message(module, name),
+                            ));
+                        }
+                    }
+
                     self.index += 1;
                 }
                 "question" if line.indent == INDENT => {
@@ -283,12 +307,12 @@ impl<'a> Parser<'a> {
         if questions.is_empty() {
             return Err(ParseError::new(
                 header,
-                format!("模块分节「{module}」不含题目"),
+                format!("模块分节「{}」不含题目", module.name()),
             ));
         }
 
         Ok(Section {
-            module: module.to_string(),
+            module,
             sub_category,
             questions,
         })
@@ -532,6 +556,36 @@ fn is_known_keyword(keyword: &str) -> bool {
             keyword,
             "module" | "subcategory" | "question" | "stem" | "option" | "answer" | "explanation"
         )
+}
+
+/// 未知模块：点名，并列出 v1 的官方模块。
+fn unknown_module_message(name: &str) -> String {
+    let modules = Module::ALL
+        .iter()
+        .map(|module| module.name())
+        .collect::<Vec<_>>()
+        .join("、");
+
+    format!("未知模块「{name}」；v1 的模块只有：{modules}")
+}
+
+/// 未知子分类：该模块有官方子分类时列出它们，没有时直说没有。
+fn unknown_sub_category_message(module: Module, name: &str) -> String {
+    let sub_categories = module
+        .sub_categories()
+        .iter()
+        .map(|sub_category| sub_category.name())
+        .collect::<Vec<_>>()
+        .join("、");
+
+    if sub_categories.is_empty() {
+        format!("未知子分类「{name}」；「{}」没有子分类", module.name())
+    } else {
+        format!(
+            "未知子分类「{name}」；「{}」的子分类只有：{sub_categories}",
+            module.name()
+        )
+    }
 }
 
 fn choice(value: &str) -> Option<Choice> {
