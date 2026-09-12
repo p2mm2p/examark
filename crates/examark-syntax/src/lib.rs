@@ -13,7 +13,7 @@ pub use ast::{
 pub use category::{Module, SubCategory};
 pub use error::ParseError;
 pub use parser::parse;
-pub use render::render;
+pub use render::{render, render_with_assets};
 
 /// 格式名称。
 pub const FORMAT_NAME: &str = "examark";

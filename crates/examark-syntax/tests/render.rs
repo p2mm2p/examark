@@ -2,10 +2,11 @@
 //!
 //! golden 文件放在 `tests/golden/`：`<名字>.examark` 是源文档，`<名字>.html` 是期望输出。
 
+use std::cell::RefCell;
 use std::fs;
 use std::path::PathBuf;
 
-use examark_syntax::{parse, render};
+use examark_syntax::{parse, render, render_with_assets};
 
 fn assert_golden(name: &str) {
     let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
@@ -65,4 +66,39 @@ fn renders_inline_math_images_and_blanks() {
 #[test]
 fn renders_a_material_question() {
     assert_golden("material");
+}
+
+/// 图片引用在 HTML 里写到哪里由调用方经映射决定：构建时用它把资源重写到输出目录。
+#[test]
+fn writes_image_references_where_the_resolver_puts_them() {
+    let source = "\
+@module 数量关系
+
+  @question
+    @stem 见图 @image{插图/散图.png}。
+    @option A @image{插图/甲.png}
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let document = parse(source).expect("文档应解析成功");
+
+    let seen = RefCell::new(Vec::new());
+    let html = render_with_assets(&document, &mut |path| {
+        seen.borrow_mut().push(path.to_string());
+        let name = path.rsplit('/').next().expect("图片路径应有文件名");
+        format!("assets/{name}")
+    });
+
+    assert_eq!(seen.into_inner(), ["插图/散图.png", "插图/甲.png"]);
+    assert!(
+        html.contains(r#"<img src="assets/散图.png" alt="">"#),
+        "{html}"
+    );
+    assert!(
+        html.contains(r#"<img src="assets/甲.png" alt="">"#),
+        "{html}"
+    );
 }

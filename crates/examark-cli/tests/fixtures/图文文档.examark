@@ -1,0 +1,38 @@
+@title 图文题目文档
+@exam 国家公务员录用考试
+@year 2025
+
+@module 数量关系
+
+  @question
+    @stem 当 @math{x>0} 时，@image{assets/图1.png} 恒成立；在 @blank 处填入合适的表达式。
+    @option A @math{\frac{1}{2}}
+    @option B 乙
+    @option C @image{插图/散图.png}
+    @option D 丁
+    @answer A
+    @explanation 由 @math{x>0} 可知，选 A。
+
+@module 资料分析
+
+  @material
+    根据以下资料，回答下列问题。
+
+    @image{assets/表1.png}
+
+  @question
+    @stem 2024 年该市规模以上工业增加值增长了多少？
+    @option A 4.1%
+    @option B 5.3%
+    @option C 6.2%
+    @option D 7.0%
+    @answer C
+
+  @question
+    @stem 与 2023 年相比，2024 年的增量约为多少亿元？
+    @option A @math{1.2}
+    @option B @math{2.4}
+    @option C @math{3.6}
+    @option D @math{4.8}
+    @answer B
+    @explanation 由表可知。

@@ -31,8 +31,19 @@ h3 { font-size: 1rem; color: #666; }
 .material { margin: 1.5rem 0 0; }
 .blank { display: inline-block; width: 4em; height: 1em; border-bottom: 1px solid currentColor; }";
 
-/// 把题目文档渲染为完整的独立 HTML 文档。
+/// 图片引用的路径映射：作者书写的相对路径进，HTML 里 `src` 该写的位置出。
+type Resolver<'a> = &'a mut dyn FnMut(&str) -> String;
+
+/// 把题目文档渲染为完整的独立 HTML 文档；图片引用按作者书写的相对路径原样输出。
 pub fn render(document: &Document) -> String {
+    render_with_assets(document, &mut |path: &str| path.to_owned())
+}
+
+/// 把题目文档渲染为完整的独立 HTML 文档，每处图片引用交给 `resolve` 映射。
+///
+/// 映射出的是 `src` 里该写的位置（构建时据此把资源重写到输出目录）；渲染器本身不接触
+/// 文件系统，资源是否存在、是否已就位由调用方保证。
+pub fn render_with_assets(document: &Document, resolve: Resolver<'_>) -> String {
     let mut html = Html::new();
 
     html.line("<!DOCTYPE html>");
@@ -51,7 +62,7 @@ pub fn render(document: &Document) -> String {
     html.open("<article class=\"paper\">");
     render_header(&mut html, document);
     for section in &document.sections {
-        render_section(&mut html, section);
+        render_section(&mut html, section, resolve);
     }
     html.close("</article>");
     html.close("</body>");
@@ -72,7 +83,7 @@ fn render_header(html: &mut Html, document: &Document) {
     html.close("</header>");
 }
 
-fn render_section(html: &mut Html, section: &Section) {
+fn render_section(html: &mut Html, section: &Section, resolve: Resolver<'_>) {
     html.open("<section class=\"module\">");
     html.line(&format!("<h2>{}</h2>", escape(section.module.name())));
 
@@ -84,41 +95,41 @@ fn render_section(html: &mut Html, section: &Section) {
     }
 
     for question in &section.questions {
-        render_question(html, question);
+        render_question(html, question, resolve);
     }
 
     html.close("</section>");
 }
 
-fn render_question(html: &mut Html, question: &Question) {
+fn render_question(html: &mut Html, question: &Question, resolve: Resolver<'_>) {
     match question {
-        Question::Single(single) => render_single_choice(html, single),
-        Question::Material(material) => render_material_question(html, material),
+        Question::Single(single) => render_single_choice(html, single, resolve),
+        Question::Material(material) => render_material_question(html, material, resolve),
     }
 }
 
-fn render_material_question(html: &mut Html, material: &MaterialQuestion) {
+fn render_material_question(html: &mut Html, material: &MaterialQuestion, resolve: Resolver<'_>) {
     html.open("<div class=\"material-question\">");
     html.open("<div class=\"material\">");
     for paragraph in &material.material.paragraphs {
-        html.line(&format!("<p>{}</p>", paragraph_html(paragraph)));
+        html.line(&format!("<p>{}</p>", paragraph_html(paragraph, resolve)));
     }
     html.close("</div>");
     for question in &material.questions {
-        render_single_choice(html, question);
+        render_single_choice(html, question, resolve);
     }
     html.close("</div>");
 }
 
-fn render_single_choice(html: &mut Html, question: &SingleChoice) {
+fn render_single_choice(html: &mut Html, question: &SingleChoice, resolve: Resolver<'_>) {
     html.open("<article class=\"question\">");
-    render_stem(html, question);
+    render_stem(html, question, resolve);
 
     html.open("<ul class=\"options\">");
     for (letter, option) in LETTERS.iter().zip(&question.options) {
         html.line(&format!(
             "<li><span class=\"option-letter\">{letter}.</span> {}</li>",
-            content_html(option)
+            content_html(option, resolve)
         ));
     }
     html.close("</ul>");
@@ -129,13 +140,13 @@ fn render_single_choice(html: &mut Html, question: &SingleChoice) {
     ));
 
     if let Some(explanation) = &question.explanation {
-        render_explanation(html, explanation);
+        render_explanation(html, explanation, resolve);
     }
 
     html.close("</article>");
 }
 
-fn render_stem(html: &mut Html, question: &SingleChoice) {
+fn render_stem(html: &mut Html, question: &SingleChoice, resolve: Resolver<'_>) {
     let number = format!(
         "<span class=\"question-number\">{}.</span> ",
         question.number
@@ -145,12 +156,12 @@ fn render_stem(html: &mut Html, question: &SingleChoice) {
         let number = if index == 0 { number.as_str() } else { "" };
         html.line(&format!(
             "<p class=\"stem\">{number}{}</p>",
-            paragraph_html(paragraph)
+            paragraph_html(paragraph, resolve)
         ));
     }
 }
 
-fn render_explanation(html: &mut Html, explanation: &Content) {
+fn render_explanation(html: &mut Html, explanation: &Content, resolve: Resolver<'_>) {
     html.open("<div class=\"explanation\">");
 
     for (index, paragraph) in explanation.paragraphs.iter().enumerate() {
@@ -159,7 +170,10 @@ fn render_explanation(html: &mut Html, explanation: &Content) {
         } else {
             ""
         };
-        html.line(&format!("<p>{label}{}</p>", paragraph_html(paragraph)));
+        html.line(&format!(
+            "<p>{label}{}</p>",
+            paragraph_html(paragraph, resolve)
+        ));
     }
 
     html.close("</div>");
@@ -186,29 +200,33 @@ fn meta_line(metadata: &Metadata) -> String {
 }
 
 /// 内容在 HTML 里的样子：段落之间空一行，逐段渲染。
-fn content_html(content: &Content) -> String {
+fn content_html(content: &Content, resolve: Resolver<'_>) -> String {
     content
         .paragraphs
         .iter()
-        .map(paragraph_html)
+        .map(|paragraph| paragraph_html(paragraph, resolve))
         .collect::<Vec<_>>()
         .join(" ")
 }
 
 /// 段落在 HTML 里的样子：逐行内节点渲染，段内换行照写成 `<br>`。
-fn paragraph_html(paragraph: &Paragraph) -> String {
-    paragraph.0.iter().map(inline_html).collect()
+fn paragraph_html(paragraph: &Paragraph, resolve: Resolver<'_>) -> String {
+    paragraph
+        .0
+        .iter()
+        .map(|inline| inline_html(inline, resolve))
+        .collect()
 }
 
 /// 行内节点在 HTML 里的样子。
 ///
 /// 公式输出为携带 LaTeX 源码的 span（前端 KaTeX 渲染是后续关注点）；图片输出为 `<img>`，
-/// 路径按作者书写的相对路径原样输出。
-fn inline_html(inline: &Inline) -> String {
+/// 路径取 `resolve` 映射的结果。
+fn inline_html(inline: &Inline, resolve: Resolver<'_>) -> String {
     match inline {
         Inline::Text(text) => escape(text).replace('\n', "<br>"),
         Inline::Math(source) => format!("<span class=\"math\">{}</span>", escape(source)),
-        Inline::Image(path) => format!("<img src=\"{}\" alt=\"\">", escape(path)),
+        Inline::Image(path) => format!("<img src=\"{}\" alt=\"\">", escape(&resolve(path))),
         Inline::Blank => "<span class=\"blank\"></span>".to_string(),
     }
 }
