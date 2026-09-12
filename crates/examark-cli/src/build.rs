@@ -27,6 +27,25 @@ impl fmt::Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
+/// 构建一次，把产出位置报到 stdout。
+pub fn build_and_report(document: &Path, output: &Path) -> Result<PathBuf, BuildError> {
+    build_announcing(document, output, "构建完成")
+}
+
+/// 重建一次，把产出位置报到 stdout。
+pub fn rebuild_and_report(document: &Path, output: &Path) -> Result<PathBuf, BuildError> {
+    build_announcing(document, output, "已重建")
+}
+
+/// 构建一次，把产出位置按 `done` 的措辞报到 stdout。
+fn build_announcing(document: &Path, output: &Path, done: &str) -> Result<PathBuf, BuildError> {
+    let target = build(document, output)?;
+
+    println!("{done}：{}", target.display());
+
+    Ok(target)
+}
+
 /// 把题目文档构建进输出目录，返回产出的 HTML 文件。
 pub fn build(document: &Path, output: &Path) -> Result<PathBuf, BuildError> {
     let source = fs::read_to_string(document).map_err(|error| {
@@ -47,10 +66,33 @@ pub fn build(document: &Path, output: &Path) -> Result<PathBuf, BuildError> {
         BuildError::new(format!("无法创建输出目录 {}：{error}", output.display()))
     })?;
     assets.copy(output)?;
-    fs::write(&target, html)
-        .map_err(|error| BuildError::new(format!("无法写入 {}：{error}", target.display())))?;
+    write(&target, html.as_bytes())?;
 
     Ok(target)
+}
+
+/// 把文件写进输出目录：先写同目录的临时文件，再改名过去。
+///
+/// `preview` 与 `toolchain` 会在重建的同时提供这些文件；直接覆写会让正好赶上的请求
+/// 读到半截内容，而同目录内的改名是原子的。
+fn write(target: &Path, bytes: &[u8]) -> Result<(), BuildError> {
+    let temporary = temporary_path(target);
+
+    fs::write(&temporary, bytes)
+        .map_err(|error| BuildError::new(format!("无法写入 {}：{error}", temporary.display())))?;
+
+    fs::rename(&temporary, target).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        BuildError::new(format!("无法写入 {}：{error}", target.display()))
+    })
+}
+
+/// 临时文件的位置：与目标同目录，加一个 `.tmp` 后缀。
+fn temporary_path(target: &Path) -> PathBuf {
+    let mut name = target.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+
+    target.with_file_name(name)
 }
 
 /// 题目文档所在目录；作者书写的资源路径以它为基准。
@@ -62,7 +104,9 @@ fn document_directory(document: &Path) -> &Path {
 }
 
 /// 输出目录里的 HTML 文件名：与题目文档同名，后缀换成 `.html`。
-fn html_name(document: &Path) -> Result<String, BuildError> {
+///
+/// `preview` 与 `toolchain` 靠它知道访问 `/` 时该提供哪个文件。
+pub fn html_name(document: &Path) -> Result<String, BuildError> {
     let stem = document
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -169,11 +213,8 @@ impl Assets {
 
         for asset in &self.copies {
             let bytes = asset.read()?;
-            let target = output.join(&asset.target);
 
-            fs::write(&target, bytes).map_err(|error| {
-                BuildError::new(format!("无法写入 {}：{error}", target.display()))
-            })?;
+            write(&output.join(&asset.target), &bytes)?;
         }
 
         Ok(())

@@ -1,6 +1,6 @@
 # examark 领域上下文
 
-examark 是一种严格的、专用的、无歧义的纯文本格式，用于编写公务员行测题目文档并渲染为 HTML。仓库是一个 Cargo workspace，包含 `examark-syntax`（解析 + HTML 渲染）与 `examark-cli`（build/watch/preview）两个 crate。
+examark 是一种严格的、专用的、无歧义的纯文本格式，用于编写公务员行测题目文档并渲染为 HTML。仓库是一个 Cargo workspace，包含 `examark-syntax`（解析 + HTML 渲染）与 `examark-cli`（build/watch/preview/toolchain）两个 crate。
 
 ## 语言（词汇表）
 
@@ -63,6 +63,10 @@ _避免_：math、latex（单独使用）
 **资源**（asset）：
 题目文档引用的非文本文件（图片）。表格以截图形式作为图片嵌入；v1 无专用表格语法。
 _避免_：resource、figure、attachment
+
+**输出目录**（output directory）：
+`build` 写出 HTML 与 `assets/` 的目录；`watch` 重建到它，`preview` 在本地提供它，`toolchain` 三者兼用。默认为 `dist`。
+_避免_：产物目录、dist 目录、构建目录
 
 **题目引用**（document reference）：
 一条题目稳定指向另一条题目的能力，为将来的错题本提供基础。v1 不做题目 id，跨文档引用语法与 id 方案一并推迟；相关调研见 `docs/research/stable-ids.md`。

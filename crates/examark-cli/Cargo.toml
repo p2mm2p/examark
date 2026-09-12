@@ -1,6 +1,6 @@
 [package]
 name = "examark-cli"
-description = "examark 命令行工具：build/watch/preview"
+description = "examark 命令行工具：build/watch/preview/toolchain"
 version.workspace = true
 edition.workspace = true
 
