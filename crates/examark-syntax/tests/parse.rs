@@ -1,8 +1,12 @@
 //! `examark-syntax` 解析接缝的测试：字符串进，AST 出。
 //!
 //! 语法：`@module` 顶格，其下每深一级缩进 2 个空格；内容行比它的关键字深一级。
+//! 正文里的行内元素是 `@math{…}`、`@image{…}` 与裸 token `@blank`。
 
-use examark_syntax::{Choice, Document, Module, ParseError, SubCategory, parse};
+use examark_syntax::{
+    Choice, Content, Document, Inline, MaterialQuestion, Module, ParseError, Question,
+    SingleChoice, SubCategory, parse,
+};
 
 fn parse_ok(source: &str) -> Document {
     parse(source).expect("文档应解析成功")
@@ -10,6 +14,48 @@ fn parse_ok(source: &str) -> Document {
 
 fn parse_err(source: &str) -> ParseError {
     parse(source).expect_err("文档应解析失败")
+}
+
+/// 独立单选题的字段。
+fn single(question: &Question) -> &SingleChoice {
+    match question {
+        Question::Single(single) => single,
+        Question::Material(_) => panic!("应为独立单选题，实际是材料题"),
+    }
+}
+
+/// 材料题的字段。
+fn material(question: &Question) -> &MaterialQuestion {
+    match question {
+        Question::Material(material) => material,
+        Question::Single(_) => panic!("应为材料题，实际是独立单选题"),
+    }
+}
+
+/// 把内容还原成源文本的样子：段落用空行连接，行内元素写回记号。
+fn source_of(content: &Content) -> String {
+    content
+        .paragraphs
+        .iter()
+        .map(|paragraph| {
+            paragraph
+                .0
+                .iter()
+                .map(|inline| match inline {
+                    Inline::Text(text) => text.clone(),
+                    Inline::Math(source) => format!("@math{{{source}}}"),
+                    Inline::Image(path) => format!("@image{{{path}}}"),
+                    Inline::Blank => "@blank".to_string(),
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// 单选题四个选项还原成源文本。
+fn options_of(question: &SingleChoice) -> Vec<String> {
+    question.options.iter().map(source_of).collect()
 }
 
 #[test]
@@ -56,20 +102,20 @@ fn parses_metadata_sections_and_questions() {
     assert_eq!(section.sub_category, Some(SubCategory::LogicalFill));
     assert_eq!(section.questions.len(), 1);
 
-    let question = &section.questions[0];
+    let question = single(&section.questions[0]);
     assert_eq!(question.number, 1);
     assert_eq!(
-        question.stem,
+        source_of(&question.stem),
         "填入划横线部分最恰当的一项是：\n他山之石，可以攻玉。两者差异。"
     );
     assert_eq!(
-        question.options,
+        options_of(question),
         ["截然不同", "大相径庭", "迥然不同", "天壤之别"]
     );
     assert_eq!(question.answer, Choice::B);
     assert_eq!(
-        question.explanation.as_deref(),
-        Some("上下文强调差距悬殊，故选 B。")
+        source_of(question.explanation.as_ref().unwrap()),
+        "上下文强调差距悬殊，故选 B。"
     );
 }
 
@@ -91,7 +137,7 @@ fn metadata_and_sub_category_are_optional() {
 
     assert_eq!(document.metadata.title, None);
     assert_eq!(document.sections[0].sub_category, None);
-    assert_eq!(document.sections[0].questions[0].explanation, None);
+    assert_eq!(single(&document.sections[0].questions[0]).explanation, None);
 }
 
 /// 一份最小合法文档：声明模块与（可选）子分类，带一道单选题。
@@ -254,7 +300,12 @@ fn numbers_questions_in_document_order_across_sections() {
     let numbers: Vec<usize> = document
         .sections
         .iter()
-        .flat_map(|section| section.questions.iter().map(|question| question.number))
+        .flat_map(|section| {
+            section
+                .questions
+                .iter()
+                .map(|question| single(question).number)
+        })
         .collect();
     assert_eq!(numbers, [1, 2, 3]);
 }
@@ -278,7 +329,7 @@ fn stem_keeps_inner_blank_lines() {
     let document = parse_ok(source);
 
     assert_eq!(
-        document.sections[0].questions[0].stem,
+        source_of(&single(&document.sections[0].questions[0]).stem),
         "第一段题干。\n\n第二段题干。"
     );
 }
@@ -294,7 +345,7 @@ fn accepts_all_four_answer_letters() {
 
         let document = parse_ok(&source);
 
-        assert_eq!(document.sections[0].questions[0].answer, choice);
+        assert_eq!(single(&document.sections[0].questions[0]).answer, choice);
     }
 }
 
@@ -304,7 +355,7 @@ fn accepts_windows_line_endings() {
 
     let document = parse_ok(source);
 
-    assert_eq!(document.sections[0].questions[0].answer, Choice::B);
+    assert_eq!(single(&document.sections[0].questions[0]).answer, Choice::B);
 }
 
 #[test]
@@ -342,9 +393,9 @@ fn blank_lines_between_blocks_are_ignored() {
 
     let document = parse_ok(source);
 
-    let question = &document.sections[0].questions[0];
-    assert_eq!(question.options, ["甲", "乙", "丙", "丁"]);
-    assert_eq!(question.explanation.as_deref(), Some("解析。"));
+    let question = single(&document.sections[0].questions[0]);
+    assert_eq!(options_of(question), ["甲", "乙", "丙", "丁"]);
+    assert_eq!(source_of(question.explanation.as_ref().unwrap()), "解析。");
 }
 
 #[test]
@@ -828,4 +879,394 @@ fn explanation_without_content_is_an_error() {
 
     assert_eq!(error.line(), 10);
     assert!(error.message().contains("解析"), "{}", error.message());
+}
+
+#[test]
+fn parses_a_material_question_with_its_sub_questions() {
+    let source = "\
+@module 资料分析
+
+  @material
+    根据以下资料，回答下列问题。
+
+    @image{assets/表1.png}
+
+  @question
+    @stem 第一小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+
+  @question
+    @stem 第二小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer D
+    @explanation 由图可知。
+";
+
+    let document = parse_ok(source);
+
+    assert_eq!(document.sections[0].questions.len(), 1);
+
+    let material_question = material(&document.sections[0].questions[0]);
+    assert_eq!(
+        source_of(&material_question.material),
+        "根据以下资料，回答下列问题。\n\n@image{assets/表1.png}"
+    );
+
+    let paragraphs = &material_question.material.paragraphs;
+    assert_eq!(paragraphs.len(), 2);
+    assert_eq!(
+        paragraphs[1].0,
+        [Inline::Image("assets/表1.png".to_string())]
+    );
+
+    assert_eq!(material_question.questions.len(), 2);
+    assert_eq!(material_question.questions[0].number, 1);
+    assert_eq!(material_question.questions[1].number, 2);
+    assert_eq!(material_question.questions[1].answer, Choice::D);
+    assert_eq!(
+        source_of(material_question.questions[1].explanation.as_ref().unwrap()),
+        "由图可知。"
+    );
+}
+
+#[test]
+fn parses_math_images_and_blanks_as_their_own_nodes() {
+    let source = "\
+@module 数量关系
+
+  @question
+    @stem 当 @math{x>0} 时，@image{assets/图1.png} 成立，在 @blank 处填数。
+    @option A @math{\\frac{1}{2}}
+    @option B 乙
+    @option C 丙
+    @option D @image{assets/选项丁.png}
+    @answer A
+    @explanation 由 @math{x>0} 得。
+";
+
+    let document = parse_ok(source);
+    let question = single(&document.sections[0].questions[0]);
+
+    assert_eq!(
+        question.stem.paragraphs[0].0,
+        [
+            Inline::Text("当 ".to_string()),
+            Inline::Math("x>0".to_string()),
+            Inline::Text(" 时，".to_string()),
+            Inline::Image("assets/图1.png".to_string()),
+            Inline::Text(" 成立，在 ".to_string()),
+            Inline::Blank,
+            Inline::Text(" 处填数。".to_string()),
+        ]
+    );
+
+    assert_eq!(
+        question.options[0].paragraphs[0].0,
+        [Inline::Math("\\frac{1}{2}".to_string())]
+    );
+    assert_eq!(
+        question.options[3].paragraphs[0].0,
+        [Inline::Image("assets/选项丁.png".to_string())]
+    );
+    assert_eq!(
+        question.explanation.as_ref().unwrap().paragraphs[0].0,
+        [
+            Inline::Text("由 ".to_string()),
+            Inline::Math("x>0".to_string()),
+            Inline::Text(" 得。".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn math_braces_balance_and_escaped_braces_do_not_count() {
+    let source = "\
+@module 数量关系
+
+  @question
+    @stem @math{f(x)=\\{x\\}} 与 @math{\\frac{a}{b}}。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let document = parse_ok(source);
+    let stem = &single(&document.sections[0].questions[0]).stem;
+
+    assert_eq!(
+        stem.paragraphs[0].0,
+        [
+            Inline::Math("f(x)=\\{x\\}".to_string()),
+            Inline::Text(" 与 ".to_string()),
+            Inline::Math("\\frac{a}{b}".to_string()),
+            Inline::Text("。".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn each_material_binds_the_questions_that_follow_it() {
+    let source = "\
+@module 资料分析
+
+  @question
+    @stem 独立题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+
+  @material
+    材料一。
+
+  @question
+    @stem 材料一的小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer B
+
+  @material
+    材料二。
+
+  @question
+    @stem 材料二的小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer C
+";
+
+    let document = parse_ok(source);
+    let questions = &document.sections[0].questions;
+
+    assert_eq!(questions.len(), 3);
+    assert_eq!(single(&questions[0]).number, 1);
+    assert_eq!(single(&questions[0]).answer, Choice::A);
+
+    let first = material(&questions[1]);
+    assert_eq!(source_of(&first.material), "材料一。");
+    assert_eq!(first.questions.len(), 1);
+    assert_eq!(first.questions[0].number, 2);
+    assert_eq!(first.questions[0].answer, Choice::B);
+
+    let second = material(&questions[2]);
+    assert_eq!(source_of(&second.material), "材料二。");
+    assert_eq!(second.questions.len(), 1);
+    assert_eq!(second.questions[0].number, 3);
+    assert_eq!(second.questions[0].answer, Choice::C);
+}
+
+#[test]
+fn inline_elements_do_not_span_lines() {
+    let source = "\
+@module 数量关系
+
+  @question
+    @stem 公式 @math{x
+      + y} 没闭合。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains('}'), "{}", error.message());
+    assert!(error.message().contains("跨行"), "{}", error.message());
+}
+
+#[test]
+fn unclosed_math_is_an_error() {
+    let error = parse_err(&document_stem_with("公式 @math{x+1。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@math"), "{}", error.message());
+    assert!(error.message().contains('}'), "{}", error.message());
+}
+
+#[test]
+fn empty_math_is_an_error() {
+    let error = parse_err(&document_stem_with("公式 @math{}。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@math"), "{}", error.message());
+    assert!(error.message().contains("空"), "{}", error.message());
+}
+
+#[test]
+fn math_without_braces_is_an_error() {
+    let error = parse_err(&document_stem_with("公式 @math x。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@math"), "{}", error.message());
+    assert!(error.message().contains('{'), "{}", error.message());
+}
+
+#[test]
+fn unclosed_image_is_an_error() {
+    let error = parse_err(&document_stem_with("见 @image{assets/图1.png 图。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@image"), "{}", error.message());
+    assert!(error.message().contains('}'), "{}", error.message());
+}
+
+#[test]
+fn empty_image_path_is_an_error() {
+    let error = parse_err(&document_stem_with("见 @image{}。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@image"), "{}", error.message());
+    assert!(error.message().contains("路径"), "{}", error.message());
+}
+
+#[test]
+fn image_without_braces_is_an_error() {
+    let error = parse_err(&document_stem_with("见 @image assets/图1.png。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@image"), "{}", error.message());
+    assert!(error.message().contains('{'), "{}", error.message());
+}
+
+#[test]
+fn blank_takes_no_value() {
+    let error = parse_err(&document_stem_with("在 @blank{} 处填数。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@blank"), "{}", error.message());
+}
+
+#[test]
+fn unknown_inline_element_is_an_error() {
+    let error = parse_err(&document_stem_with("见 @figure{图1.png}。"));
+
+    assert_eq!(error.line(), 4);
+    assert!(error.message().contains("@figure"), "{}", error.message());
+    assert!(
+        error.message().contains("@math"),
+        "错误应列出可用的行内元素：{}",
+        error.message()
+    );
+}
+
+#[test]
+fn block_keyword_in_a_content_line_is_an_error() {
+    let source = "\
+@module 资料分析
+
+  @question
+    @stem 题干。
+      @answer B
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 5);
+    assert!(error.message().contains("@answer"), "{}", error.message());
+    assert!(error.message().contains("内容行"), "{}", error.message());
+}
+
+#[test]
+fn material_without_content_is_an_error() {
+    let source = "\
+@module 资料分析
+
+  @material
+
+  @question
+    @stem 小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 3);
+    assert!(error.message().contains("材料"), "{}", error.message());
+}
+
+#[test]
+fn material_without_questions_is_an_error() {
+    let source = "\
+@module 资料分析
+
+  @material
+    根据以下资料，回答下列问题。
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 3);
+    assert!(error.message().contains("材料"), "{}", error.message());
+    assert!(error.message().contains("一道"), "{}", error.message());
+}
+
+#[test]
+fn material_takes_no_value() {
+    let source = "\
+@module 资料分析
+
+  @material 材料一
+
+  @question
+    @stem 小题。
+    @option A 甲
+    @option B 乙
+    @option C 丙
+    @option D 丁
+    @answer A
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 3);
+    assert!(error.message().contains("@material"), "{}", error.message());
+}
+
+#[test]
+fn material_outside_a_section_is_an_error() {
+    let source = "\
+@material
+  材料一。
+
+  @question
+    @stem 小题。
+";
+
+    let error = parse_err(source);
+
+    assert_eq!(error.line(), 1);
+    assert!(error.message().contains("分节"), "{}", error.message());
+}
+
+/// 一份带占位题干的最小文档：把 `@stem` 的正文交给调用方，用于行内元素的用例。
+fn document_stem_with(stem: &str) -> String {
+    format!(
+        "@module 数量关系\n\n  @question\n    @stem {stem}\n    @option A 甲\n    @option B 乙\n    @option C 丙\n    @option D 丁\n    @answer A\n"
+    )
 }

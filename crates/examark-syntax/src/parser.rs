@@ -6,17 +6,24 @@
 //! @title 题名              ← 元数据（缩进 0，键封闭）
 //! @module 模块名            ← 模块分节（缩进 0，模块封闭）
 //!   @subcategory 子分类      ← 可选，必须在题目之前；须属于本节模块（子分类封闭）
-//!   @question              ← 题目（缩进 2）
+//!   @question              ← 独立单选题（缩进 2）
 //!     @stem 题干首行         ← 字段（缩进 4）
 //!       题干续行             ← 内容行（缩进 6）
 //!     @option A 选项
 //!     @answer B
 //!     @explanation 解析
+//!   @material              ← 材料题：材料首行（缩进 2）
+//!     材料续行              ← 内容行（缩进 4）
+//!   @question              ← 紧随材料的题目都属于该材料
 //! ```
 //!
 //! 缩进是结构的一部分：每层 2 个空格，内容行必须比它的关键字深一级，回退必须命中已有的层级列。
+//! 正文里的行内元素是 `@math{…}`、`@image{…}` 与裸 token `@blank`；它们不跨行，不认识的一律报错。
 
-use crate::ast::{Choice, Document, Metadata, Question, Section};
+use crate::ast::{
+    Choice, Content, Document, Inline, MaterialQuestion, Metadata, Paragraph, Question, Section,
+    SingleChoice,
+};
 use crate::category::{Module, SubCategory};
 use crate::error::ParseError;
 
@@ -195,7 +202,7 @@ impl<'a> Parser<'a> {
                     self.index += 1;
                     sections.push(self.parse_section(module, header)?);
                 }
-                "subcategory" | "question" => {
+                "subcategory" | "question" | "material" => {
                     return Err(ParseError::new(
                         line.number,
                         format!("「@{keyword}」必须位于模块分节之内，且缩进 {INDENT} 个空格"),
@@ -204,7 +211,7 @@ impl<'a> Parser<'a> {
                 keyword if Metadata::is_key(keyword) => {
                     return Err(ParseError::new(line.number, "元数据必须写在文档开头"));
                 }
-                keyword if is_known_keyword(keyword) => {
+                keyword if is_block_keyword(keyword) => {
                     return Err(ParseError::new(
                         line.number,
                         format!("「@{keyword}」只能出现在题目块内，且缩进 {FIELD_INDENT} 个空格"),
@@ -287,9 +294,14 @@ impl<'a> Parser<'a> {
                     self.index += 1;
                 }
                 "question" if line.indent == INDENT => {
-                    questions.push(self.parse_question(line)?);
+                    let question = self.parse_single_choice(line)?;
+                    questions.push(Question::Single(question));
                 }
-                keyword if is_known_keyword(keyword) => {
+                "material" if line.indent == INDENT => {
+                    let question = self.parse_material(line)?;
+                    questions.push(Question::Material(question));
+                }
+                keyword if is_block_keyword(keyword) => {
                     return Err(ParseError::new(
                         line.number,
                         format!("「@{keyword}」只能出现在题目块内，且缩进 {FIELD_INDENT} 个空格"),
@@ -318,7 +330,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_question(&mut self, header: Line<'a>) -> Result<Question, ParseError> {
+    fn parse_single_choice(&mut self, header: Line<'a>) -> Result<SingleChoice, ParseError> {
         let start = header.number;
         if !value_of(header.content).is_empty() {
             return Err(ParseError::new(start, "「@question」不接受取值"));
@@ -333,7 +345,7 @@ impl<'a> Parser<'a> {
         let answer = self.parse_answer(start)?;
         let explanation = self.parse_explanation()?;
 
-        Ok(Question {
+        Ok(SingleChoice {
             number,
             stem,
             options,
@@ -342,7 +354,46 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_stem(&mut self, start: usize) -> Result<String, ParseError> {
+    /// 材料题由「相邻绑定」构成：`@material` 的材料正文之后，紧跟的每一道 `@question`
+    /// 都是它的小题，直到下一个 `@material`、子分类声明或分节结束。
+    fn parse_material(&mut self, header: Line<'a>) -> Result<MaterialQuestion, ParseError> {
+        let start = header.number;
+        if !value_of(header.content).is_empty() {
+            return Err(ParseError::new(start, "「@material」不接受取值"));
+        }
+
+        let lines = self.collect_content(header, "material")?;
+        let material = content_of(&lines)?;
+        if material.paragraphs.is_empty() {
+            return Err(ParseError::new(start, "材料内容为空"));
+        }
+
+        let mut questions = Vec::new();
+        loop {
+            self.skip_blank();
+            let Some(line) = self.line() else {
+                break;
+            };
+            if line.indent != INDENT || keyword_of(line.content) != Some("question") {
+                break;
+            }
+            questions.push(self.parse_single_choice(line)?);
+        }
+
+        if questions.is_empty() {
+            return Err(ParseError::new(
+                start,
+                "材料之后必须紧跟至少一道「@question」小题",
+            ));
+        }
+
+        Ok(MaterialQuestion {
+            material,
+            questions,
+        })
+    }
+
+    fn parse_stem(&mut self, start: usize) -> Result<Content, ParseError> {
         let Some((line, keyword)) = self.next_field()? else {
             return Err(ParseError::new(start, "题目缺少题干"));
         };
@@ -353,16 +404,17 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let (header, stem) = self.collect_content(line, "stem")?;
-        if stem.is_empty() {
-            return Err(ParseError::new(header, "题目缺少题干"));
+        let lines = self.collect_content(line, "stem")?;
+        let stem = content_of(&lines)?;
+        if stem.paragraphs.is_empty() {
+            return Err(ParseError::new(line.number, "题目缺少题干"));
         }
 
         Ok(stem)
     }
 
-    fn parse_options(&mut self, start: usize) -> Result<[String; 4], ParseError> {
-        let mut options: Vec<String> = Vec::with_capacity(4);
+    fn parse_options(&mut self, start: usize) -> Result<[Content; 4], ParseError> {
+        let mut options: Vec<Content> = Vec::with_capacity(4);
 
         for expected in ['A', 'B', 'C', 'D'] {
             let Some((line, keyword)) = self.next_field()? else {
@@ -401,7 +453,9 @@ impl<'a> Parser<'a> {
                         ));
                     }
 
-                    options.push(text.to_string());
+                    options.push(Content {
+                        paragraphs: vec![Paragraph(inline_nodes(line, text)?)],
+                    });
                     self.index += 1;
                 }
                 "answer" => {
@@ -449,16 +503,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_explanation(&mut self) -> Result<Option<String>, ParseError> {
+    fn parse_explanation(&mut self) -> Result<Option<Content>, ParseError> {
         let Some((line, keyword)) = self.next_field()? else {
             return Ok(None);
         };
 
         match keyword {
             "explanation" => {
-                let (header, explanation) = self.collect_content(line, "explanation")?;
-                if explanation.is_empty() {
-                    return Err(ParseError::new(header, "解析内容为空"));
+                let lines = self.collect_content(line, "explanation")?;
+                let explanation = content_of(&lines)?;
+                if explanation.paragraphs.is_empty() {
+                    return Err(ParseError::new(line.number, "解析内容为空"));
                 }
                 Ok(Some(explanation))
             }
@@ -495,19 +550,24 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// 读取一条内容字段（`@stem`、`@explanation`）：关键字行内可带首行，续行须比它深一级。
+    /// 读取一条内容字段（`@stem`、`@explanation`、`@material`）：关键字行内可带首行，
+    /// 续行须比它深一级。返回内容行本身（带行号，供行内元素报错），空行原样保留。
     fn collect_content(
         &mut self,
         header: Line<'a>,
         keyword: &str,
-    ) -> Result<(usize, String), ParseError> {
+    ) -> Result<Vec<Line<'a>>, ParseError> {
         let content_indent = header.indent + INDENT;
-        let mut content = vec![value_of(header.content)];
+        let mut lines = vec![Line {
+            number: header.number,
+            indent: content_indent,
+            content: value_of(header.content),
+        }];
         self.index += 1;
 
         while let Some(line) = self.line() {
             if line.content.is_empty() {
-                content.push("");
+                lines.push(line);
                 self.index += 1;
                 continue;
             }
@@ -520,26 +580,22 @@ impl<'a> Parser<'a> {
                     format!("内容行必须比「@{keyword}」深一级（缩进 {content_indent} 个空格）"),
                 ));
             }
-            if let Some(inner) = keyword_of(line.content) {
-                return Err(ParseError::new(
-                    line.number,
-                    format!("「@{inner}」不能出现在内容行里"),
-                ));
-            }
 
-            content.push(line.content);
+            lines.push(line);
             self.index += 1;
         }
 
-        Ok((header.number, trim_content(&content)))
+        Ok(lines)
     }
 }
 
-/// 识别行首关键字：`@xxx`。
+/// 识别行首关键字：`@xxx`，到空白或行内元素的 `{` 为止。
 fn keyword_of(content: &str) -> Option<&str> {
-    content
-        .strip_prefix('@')
-        .map(|rest| rest.split(char::is_whitespace).next().unwrap_or_default())
+    content.strip_prefix('@').map(|rest| {
+        rest.split(|character: char| character.is_whitespace() || character == '{')
+            .next()
+            .unwrap_or_default()
+    })
 }
 
 /// 取关键字之后的取值（去掉分隔用的空白）。
@@ -550,12 +606,24 @@ fn value_of(content: &str) -> &str {
     }
 }
 
-fn is_known_keyword(keyword: &str) -> bool {
+fn is_block_keyword(keyword: &str) -> bool {
     Metadata::is_key(keyword)
         || matches!(
             keyword,
-            "module" | "subcategory" | "question" | "stem" | "option" | "answer" | "explanation"
+            "module"
+                | "subcategory"
+                | "question"
+                | "material"
+                | "stem"
+                | "option"
+                | "answer"
+                | "explanation"
         )
+}
+
+/// 关键字标识符的字符：ASCII 字母、数字与下划线。
+fn is_identifier_char(character: char) -> bool {
+    character.is_ascii_alphanumeric() || character == '_'
 }
 
 /// 未知模块：点名，并列出 v1 的官方模块。
@@ -598,19 +666,155 @@ fn choice(value: &str) -> Option<Choice> {
     }
 }
 
-/// 内容块：去掉首尾空行，逐行去掉行尾空白，内部空行保留。
-fn trim_content(lines: &[&str]) -> String {
-    let first = lines.iter().position(|line| !line.trim().is_empty());
-    let last = lines.iter().rposition(|line| !line.trim().is_empty());
+/// 把内容行组成 `Content`：去掉首尾空行，空行分段，行内元素解析为节点。
+fn content_of(lines: &[Line<'_>]) -> Result<Content, ParseError> {
+    let first = lines.iter().position(|line| !line.content.is_empty());
+    let last = lines.iter().rposition(|line| !line.content.is_empty());
+    let (Some(first), Some(last)) = (first, last) else {
+        return Ok(Content {
+            paragraphs: Vec::new(),
+        });
+    };
 
-    match (first, last) {
-        (Some(first), Some(last)) => lines[first..=last]
-            .iter()
-            .map(|line| line.trim_end())
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
+    let mut paragraphs = Vec::new();
+    let mut current: Vec<Inline> = Vec::new();
+
+    for line in &lines[first..=last] {
+        if line.content.is_empty() {
+            if !current.is_empty() {
+                paragraphs.push(Paragraph(std::mem::take(&mut current)));
+            }
+            continue;
+        }
+        if !current.is_empty() {
+            current.push(Inline::Text("\n".to_string()));
+        }
+        current.extend(inline_nodes(*line, line.content)?);
     }
+    if !current.is_empty() {
+        paragraphs.push(Paragraph(current));
+    }
+
+    Ok(Content { paragraphs })
+}
+
+/// 解析一行正文里的行内元素：`@math{…}`、`@image{…}` 与裸 token `@blank`。
+///
+/// 行内元素的记号是「`@` + ASCII 字母开头的标识符」；其他位置上的 `@`（如 `@1`、`@张三`）
+/// 按正文处理。不认识的标识符一律报错，绝不静默当正文；行内元素不跨行。
+fn inline_nodes(line: Line<'_>, text: &str) -> Result<Vec<Inline>, ParseError> {
+    let mut nodes = Vec::new();
+    let mut rest = text;
+
+    while let Some(index) = rest.find('@') {
+        if index > 0 {
+            nodes.push(Inline::Text(rest[..index].to_string()));
+        }
+        rest = &rest[index + 1..];
+
+        let end = rest
+            .find(|character: char| !is_identifier_char(character))
+            .unwrap_or(rest.len());
+        let identifier = &rest[..end];
+        if !identifier.starts_with(|character: char| character.is_ascii_alphabetic()) {
+            nodes.push(Inline::Text("@".to_string()));
+            continue;
+        }
+        rest = &rest[end..];
+
+        match identifier {
+            "math" => {
+                let Some(body) = rest.strip_prefix('{') else {
+                    return Err(ParseError::new(
+                        line.number,
+                        "「@math」必须紧跟「{」，写成 @math{公式}",
+                    ));
+                };
+                let (source, tail) = math_body(line, body)?;
+                if source.is_empty() {
+                    return Err(ParseError::new(line.number, "「@math」的公式内容为空"));
+                }
+                nodes.push(Inline::Math(source));
+                rest = tail;
+            }
+            "image" => {
+                let Some(body) = rest.strip_prefix('{') else {
+                    return Err(ParseError::new(
+                        line.number,
+                        "「@image」必须紧跟「{」，写成 @image{相对路径}",
+                    ));
+                };
+                let Some(closing) = body.find('}') else {
+                    return Err(ParseError::new(
+                        line.number,
+                        "「@image」缺少闭合的「}」；行内元素不能跨行",
+                    ));
+                };
+                let path = body[..closing].trim();
+                if path.is_empty() {
+                    return Err(ParseError::new(line.number, "「@image」缺少图片路径"));
+                }
+                nodes.push(Inline::Image(path.to_string()));
+                rest = &body[closing + 1..];
+            }
+            "blank" => {
+                if rest.starts_with('{') {
+                    return Err(ParseError::new(
+                        line.number,
+                        "「@blank」不接受取值，直接写 @blank",
+                    ));
+                }
+                nodes.push(Inline::Blank);
+            }
+            identifier if is_block_keyword(identifier) => {
+                return Err(ParseError::new(
+                    line.number,
+                    format!("「@{identifier}」不能出现在内容行里"),
+                ));
+            }
+            identifier => {
+                return Err(ParseError::new(
+                    line.number,
+                    format!(
+                        "未知行内元素「@{identifier}」；行内元素只有：@math{{公式}}、@image{{相对路径}}、@blank"
+                    ),
+                ));
+            }
+        }
+    }
+
+    if !rest.is_empty() {
+        nodes.push(Inline::Text(rest.to_string()));
+    }
+
+    Ok(nodes)
+}
+
+/// 取 `@math{…}` 的公式源码：花括号按 LaTeX 语法配平，`\{`、`\}` 是转义不参与计数。
+fn math_body<'a>(line: Line<'_>, body: &'a str) -> Result<(String, &'a str), ParseError> {
+    let mut depth = 1usize;
+    let mut characters = body.char_indices();
+
+    while let Some((index, character)) = characters.next() {
+        match character {
+            '\\' => {
+                characters.next();
+            }
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok((body[..index].to_string(), &body[index + 1..]));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err(ParseError::new(
+        line.number,
+        "「@math」缺少闭合的「}」；行内元素不能跨行",
+    ))
 }
 
 /// 结构行的缩进不对：指名关键字与应有的缩进。

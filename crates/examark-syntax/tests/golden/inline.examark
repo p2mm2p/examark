@@ -1,0 +1,12 @@
+@title 行内元素
+
+@module 数量关系
+
+  @question
+    @stem 当 @math{x>0} 时，@image{assets/图1.png} 恒成立；在 @blank 处填入合适的表达式。
+    @option A @math{\frac{1}{2}}
+    @option B 乙 < 丙 & 丁
+    @option C @image{assets/选项丙.png}
+    @option D 丁
+    @answer A
+    @explanation 由 @math{x>0} 可知，选 A。

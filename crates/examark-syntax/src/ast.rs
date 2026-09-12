@@ -70,19 +70,61 @@ pub struct Section {
     pub questions: Vec<Question>,
 }
 
-/// 单选题。
+/// 题目：AST 中的一个考试条目。v1 有两种形态。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Question {
+pub enum Question {
+    /// 独立单选题。
+    Single(SingleChoice),
+    /// 材料题：共享材料 + 若干单选小题。
+    Material(MaterialQuestion),
+}
+
+/// 单选题：题干、选项、必填答案与可选解析。既可独立成题，也可作材料题的小题。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SingleChoice {
     /// 文档顺序序号，从 1 开始；由解析器分配，作者从不手写。
     pub number: usize,
     /// 题干。
-    pub stem: String,
+    pub stem: Content,
     /// 四个选项，依次对应 A、B、C、D。
-    pub options: [String; 4],
+    pub options: [Content; 4],
     /// 正确答案。
     pub answer: Choice,
     /// 解析；作者未写时为 `None`。
-    pub explanation: Option<String>,
+    pub explanation: Option<Content>,
+}
+
+/// 材料题：一段共享材料，后接若干按文档顺序编号的单选题。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialQuestion {
+    /// 共享材料。
+    pub material: Content,
+    /// 材料之后紧随的单选题。
+    pub questions: Vec<SingleChoice>,
+}
+
+/// 一段内容：空行分段，段内换行保留。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Content {
+    /// 段落，按文档顺序。
+    pub paragraphs: Vec<Paragraph>,
+}
+
+/// 一个段落：若干行内节点；文本节点里的 `\n` 表示段内换行。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paragraph(pub Vec<Inline>);
+
+/// 行内节点。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Inline {
+    /// 纯文本。
+    Text(String),
+    /// 行内公式，内容为 LaTeX 源码。
+    Math(String),
+    /// 图片引用，内容为作者按相对路径书写的资源位置。
+    Image(String),
+    /// 空位：题干里留待填入的空白位置，不带内容。
+    Blank,
 }
 
 /// 单选题的正确选项。

@@ -56,3 +56,13 @@ fn renders_a_minimal_document() {
 fn renders_a_whole_paper() {
     assert_golden("paper");
 }
+
+#[test]
+fn renders_inline_math_images_and_blanks() {
+    assert_golden("inline");
+}
+
+#[test]
+fn renders_a_material_question() {
+    assert_golden("material");
+}

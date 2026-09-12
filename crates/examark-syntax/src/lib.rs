@@ -6,7 +6,10 @@ mod error;
 mod parser;
 mod render;
 
-pub use ast::{Choice, Document, Metadata, Question, Section};
+pub use ast::{
+    Choice, Content, Document, Inline, MaterialQuestion, Metadata, Paragraph, Question, Section,
+    SingleChoice,
+};
 pub use category::{Module, SubCategory};
 pub use error::ParseError;
 pub use parser::parse;

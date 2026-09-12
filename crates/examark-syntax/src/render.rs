@@ -2,7 +2,10 @@
 //!
 //! 渲染是纯 AST→HTML 的函数：它只读 AST，不接触源文本。
 
-use crate::ast::{Document, Metadata, Question, Section};
+use crate::ast::{
+    Content, Document, Inline, MaterialQuestion, Metadata, Paragraph, Question, Section,
+    SingleChoice,
+};
 
 /// 无题名文档的兜底题名。
 const DEFAULT_TITLE: &str = "题目文档";
@@ -24,7 +27,9 @@ h3 { font-size: 1rem; color: #666; }
 .options { list-style: none; padding: 0; }
 .options li { margin: .25rem 0; }
 .answer { font-weight: 600; }
-.explanation { color: #444; }";
+.explanation { color: #444; }
+.material { margin: 1.5rem 0 0; }
+.blank { display: inline-block; width: 4em; height: 1em; border-bottom: 1px solid currentColor; }";
 
 /// 把题目文档渲染为完整的独立 HTML 文档。
 pub fn render(document: &Document) -> String {
@@ -86,6 +91,26 @@ fn render_section(html: &mut Html, section: &Section) {
 }
 
 fn render_question(html: &mut Html, question: &Question) {
+    match question {
+        Question::Single(single) => render_single_choice(html, single),
+        Question::Material(material) => render_material_question(html, material),
+    }
+}
+
+fn render_material_question(html: &mut Html, material: &MaterialQuestion) {
+    html.open("<div class=\"material-question\">");
+    html.open("<div class=\"material\">");
+    for paragraph in &material.material.paragraphs {
+        html.line(&format!("<p>{}</p>", paragraph_html(paragraph)));
+    }
+    html.close("</div>");
+    for question in &material.questions {
+        render_single_choice(html, question);
+    }
+    html.close("</div>");
+}
+
+fn render_single_choice(html: &mut Html, question: &SingleChoice) {
     html.open("<article class=\"question\">");
     render_stem(html, question);
 
@@ -93,7 +118,7 @@ fn render_question(html: &mut Html, question: &Question) {
     for (letter, option) in LETTERS.iter().zip(&question.options) {
         html.line(&format!(
             "<li><span class=\"option-letter\">{letter}.</span> {}</li>",
-            escape(option)
+            content_html(option)
         ));
     }
     html.close("</ul>");
@@ -110,13 +135,13 @@ fn render_question(html: &mut Html, question: &Question) {
     html.close("</article>");
 }
 
-fn render_stem(html: &mut Html, question: &Question) {
+fn render_stem(html: &mut Html, question: &SingleChoice) {
     let number = format!(
         "<span class=\"question-number\">{}.</span> ",
         question.number
     );
 
-    for (index, paragraph) in paragraphs(&question.stem).iter().enumerate() {
+    for (index, paragraph) in question.stem.paragraphs.iter().enumerate() {
         let number = if index == 0 { number.as_str() } else { "" };
         html.line(&format!(
             "<p class=\"stem\">{number}{}</p>",
@@ -125,10 +150,10 @@ fn render_stem(html: &mut Html, question: &Question) {
     }
 }
 
-fn render_explanation(html: &mut Html, explanation: &str) {
+fn render_explanation(html: &mut Html, explanation: &Content) {
     html.open("<div class=\"explanation\">");
 
-    for (index, paragraph) in paragraphs(explanation).iter().enumerate() {
+    for (index, paragraph) in explanation.paragraphs.iter().enumerate() {
         let label = if index == 0 {
             "<span class=\"label\">解析：</span>"
         } else {
@@ -160,31 +185,32 @@ fn meta_line(metadata: &Metadata) -> String {
         .join(" · ")
 }
 
-/// 把一段正文切成段落：空行分段，段内换行保留。
-fn paragraphs(text: &str) -> Vec<String> {
-    let mut paragraphs = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
-
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            if !current.is_empty() {
-                paragraphs.push(current.join("\n"));
-                current.clear();
-            }
-        } else {
-            current.push(line);
-        }
-    }
-    if !current.is_empty() {
-        paragraphs.push(current.join("\n"));
-    }
-
-    paragraphs
+/// 内容在 HTML 里的样子：段落之间空一行，逐段渲染。
+fn content_html(content: &Content) -> String {
+    content
+        .paragraphs
+        .iter()
+        .map(paragraph_html)
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
-/// 段落在 HTML 里的样子：先转义，再把段内换行照写成 `<br>`。
-fn paragraph_html(paragraph: &str) -> String {
-    escape(paragraph).replace('\n', "<br>")
+/// 段落在 HTML 里的样子：逐行内节点渲染，段内换行照写成 `<br>`。
+fn paragraph_html(paragraph: &Paragraph) -> String {
+    paragraph.0.iter().map(inline_html).collect()
+}
+
+/// 行内节点在 HTML 里的样子。
+///
+/// 公式输出为携带 LaTeX 源码的 span（前端 KaTeX 渲染是后续关注点）；图片输出为 `<img>`，
+/// 路径按作者书写的相对路径原样输出。
+fn inline_html(inline: &Inline) -> String {
+    match inline {
+        Inline::Text(text) => escape(text).replace('\n', "<br>"),
+        Inline::Math(source) => format!("<span class=\"math\">{}</span>", escape(source)),
+        Inline::Image(path) => format!("<img src=\"{}\" alt=\"\">", escape(path)),
+        Inline::Blank => "<span class=\"blank\"></span>".to_string(),
+    }
 }
 
 fn escape(text: &str) -> String {
