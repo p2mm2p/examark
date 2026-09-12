@@ -1,0 +1,9 @@
+@module 资料分析
+
+  @question
+    @stem 与上年同期相比，2024 年某市规模以上工业增加值增长了多少？
+    @option A 4.1%
+    @option B 5.3%
+    @option C 6.2%
+    @option D 7.0%
+    @answer C

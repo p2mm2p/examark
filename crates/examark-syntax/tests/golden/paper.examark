@@ -1,0 +1,30 @@
+@title 2025 年国考行测模拟卷（一）
+@exam 国家公务员录用考试
+@year 2025
+@paper 副省级
+@source 网络整理
+
+@module 言语理解与表达
+  @subcategory 逻辑填空
+
+  @question
+    @stem 填入划横线部分最恰当的一项是：
+      他山之石，可以攻玉。两者差异。
+    @option A 截然不同
+    @option B 大相径庭
+    @option C 迥然不同
+    @option D 天壤之别
+    @answer B
+    @explanation 上下文强调差距悬殊，故选 B。
+
+@module 数量关系
+
+  @question
+    @stem 某单位有 5 < 8 名职工 & 2 名实习生。
+
+      现从中选出 3 人，问有多少种选法？
+    @option A 甲 & 乙
+    @option B 丙 < 丁
+    @option C 戊
+    @option D 己
+    @answer D
