@@ -2,7 +2,7 @@
 //!
 //! 渲染是纯 AST→HTML 的函数：它只读 AST，不接触源文本。
 
-use crate::ast::{Choice, Document, Metadata, Question, Section};
+use crate::ast::{Document, Metadata, Question, Section};
 
 /// 无题名文档的兜底题名。
 const DEFAULT_TITLE: &str = "题目文档";
@@ -100,7 +100,7 @@ fn render_question(html: &mut Html, question: &Question) {
 
     html.line(&format!(
         "<p class=\"answer\">答案：{}</p>",
-        letter(question.answer)
+        question.answer.letter()
     ));
 
     if let Some(explanation) = &question.explanation {
@@ -120,7 +120,7 @@ fn render_stem(html: &mut Html, question: &Question) {
         let number = if index == 0 { number.as_str() } else { "" };
         html.line(&format!(
             "<p class=\"stem\">{number}{}</p>",
-            markup(paragraph)
+            paragraph_html(paragraph)
         ));
     }
 }
@@ -134,13 +134,15 @@ fn render_explanation(html: &mut Html, explanation: &str) {
         } else {
             ""
         };
-        html.line(&format!("<p>{label}{}</p>", markup(paragraph)));
+        html.line(&format!("<p>{label}{}</p>", paragraph_html(paragraph)));
     }
 
     html.close("</div>");
 }
 
-/// 卷首元数据行：有值的字段按字段顺序用 ` · ` 连接；一个值都没有时为空串。
+/// 卷首元数据行：考试、年份、卷别、地区、出处按字段顺序用 ` · ` 连接；一个值都没有时为空串。
+///
+/// 参考时限与总分不出现在卷首行——卷面不印分值，它们留待需要时另行呈现。
 fn meta_line(metadata: &Metadata) -> String {
     let fields = [
         &metadata.exam,
@@ -148,8 +150,6 @@ fn meta_line(metadata: &Metadata) -> String {
         &metadata.paper,
         &metadata.region,
         &metadata.source,
-        &metadata.duration,
-        &metadata.score,
     ];
 
     fields
@@ -183,7 +183,7 @@ fn paragraphs(text: &str) -> Vec<String> {
 }
 
 /// 段落在 HTML 里的样子：先转义，再把段内换行照写成 `<br>`。
-fn markup(paragraph: &str) -> String {
+fn paragraph_html(paragraph: &str) -> String {
     escape(paragraph).replace('\n', "<br>")
 }
 
@@ -205,15 +205,6 @@ fn escape(text: &str) -> String {
 
 fn title(document: &Document) -> &str {
     document.metadata.title.as_deref().unwrap_or(DEFAULT_TITLE)
-}
-
-fn letter(choice: Choice) -> char {
-    match choice {
-        Choice::A => 'A',
-        Choice::B => 'B',
-        Choice::C => 'C',
-        Choice::D => 'D',
-    }
 }
 
 /// 逐行写 HTML 的缓冲区；`depth` 决定每行行首的缩进。

@@ -93,3 +93,15 @@ pub enum Choice {
     C,
     D,
 }
+
+impl Choice {
+    /// 该选项的字母。
+    pub(crate) fn letter(self) -> char {
+        match self {
+            Self::A => 'A',
+            Self::B => 'B',
+            Self::C => 'C',
+            Self::D => 'D',
+        }
+    }
+}
