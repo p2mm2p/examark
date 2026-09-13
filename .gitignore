@@ -1,4 +1,10 @@
-.scratch/
 /target
-.commandcode/
 .DS_Store
+
+.agent/
+.pi/
+.omp/
+.claude/
+.codex/
+.opencode/
+.commandcode/
