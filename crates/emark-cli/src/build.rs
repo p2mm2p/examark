@@ -4,7 +4,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use examark_syntax::{parse, render_with_assets};
+use emark_syntax::{parse, render_with_assets};
 
 /// 资源在输出目录里的子目录。
 const ASSET_DIRECTORY: &str = "assets";

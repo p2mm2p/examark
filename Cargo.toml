@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/examark-syntax", "crates/examark-cli"]
+members = ["crates/emark-syntax", "crates/emark-cli"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-examark-syntax = { path = "crates/examark-syntax" }
+emark-syntax = { path = "crates/emark-syntax" }

@@ -1,0 +1,12 @@
+[package]
+name = "emark-cli"
+description = "emark 命令行工具：build/watch/preview/toolchain"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "emark"
+path = "src/main.rs"
+
+[dependencies]
+emark-syntax.workspace = true

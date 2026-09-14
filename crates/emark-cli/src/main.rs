@@ -1,4 +1,4 @@
-//! examark 命令行工具：build/watch/preview/toolchain。
+//! emark 命令行工具：build/watch/preview/toolchain。
 
 mod build;
 mod preview;
@@ -9,10 +9,10 @@ use std::fmt;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use examark_syntax::FORMAT_NAME;
+use emark_syntax::FORMAT_NAME;
 
 const USAGE: &str = "\
-用法：examark <命令> <文档> [选项]
+用法：emark <命令> <文档> [选项]
 
 命令：
   build      把题目文档构建为可整体移动、可分享的输出

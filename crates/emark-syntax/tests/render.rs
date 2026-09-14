@@ -1,6 +1,6 @@
-//! `examark-syntax` 渲染接缝的测试：字符串进，HTML 出。
+//! `emark-syntax` 渲染接缝的测试：字符串进，HTML 出。
 //!
-//! golden 文件放在 `tests/golden/`：`<名字>.examark` 是源文档，`<名字>.html` 是期望输出。
+//! golden 文件放在 `tests/golden/`：`<名字>.emark` 是源文档，`<名字>.html` 是期望输出。
 //! 真题语料放在 `tests/papers/`，同样是 `<名字>.examark` + `<名字>.html` 一对。
 //!
 //! 设了 `EXAMARK_UPDATE_GOLDEN` 时只重写 `.html` 而不比对——用来产出初版 golden，

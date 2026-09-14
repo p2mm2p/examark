@@ -8,20 +8,20 @@ use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn examark(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_examark"))
+fn emark(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_emark"))
         .args(args)
         .output()
-        .expect("examark 二进制应可运行")
+        .expect("emark 二进制应可运行")
 }
 
-/// 在指定工作目录里运行 examark，用于默认输出目录这类与 cwd 有关的行为。
-fn examark_in(directory: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_examark"))
+/// 在指定工作目录里运行 emark，用于默认输出目录这类与 cwd 有关的行为。
+fn emark_in(directory: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_emark"))
         .current_dir(directory)
         .args(args)
         .output()
-        .expect("examark 二进制应可运行")
+        .expect("emark 二进制应可运行")
 }
 
 fn stdout(output: &Output) -> String {
@@ -53,7 +53,7 @@ impl TempDir {
     fn new(name: &str) -> Self {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         let path = std::env::temp_dir().join(format!(
-            "examark-cli-{}-{name}-{}",
+            "emark-cli-{}-{name}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
@@ -73,9 +73,9 @@ impl Drop for TempDir {
     }
 }
 
-/// 在命令边界上跑一次 build：`examark build <文档> -o <输出目录>`。
+/// 在命令边界上跑一次 build：`emark build <文档> -o <输出目录>`。
 fn build_into(document: &Path, output: &Path) -> Output {
-    examark(&[
+    emark(&[
         "build",
         document.to_str().expect("路径应是 UTF-8"),
         "-o",
@@ -83,33 +83,33 @@ fn build_into(document: &Path, output: &Path) -> Output {
     ])
 }
 
-/// 把 `图文文档.examark` 构建进一个临时目录，连同命令输出一起返回。
+/// 把 `图文文档.emark` 构建进一个临时目录，连同命令输出一起返回。
 fn build_fixture(name: &str) -> (TempDir, Output) {
     let output = TempDir::new(name);
-    let result = build_into(&fixtures().join("图文文档.examark"), output.path());
+    let result = build_into(&fixtures().join("图文文档.emark"), output.path());
 
     (output, result)
 }
 
 #[test]
 fn version_flag_prints_format_name_and_version() {
-    let output = examark(&["--version"]);
+    let output = emark(&["--version"]);
 
     assert!(output.status.success());
     assert_eq!(
         stdout(&output).trim(),
-        format!("examark {}", env!("CARGO_PKG_VERSION"))
+        format!("emark {}", env!("CARGO_PKG_VERSION"))
     );
 }
 
 #[test]
 fn short_version_flag_matches_long_version_flag() {
-    assert_eq!(stdout(&examark(&["-V"])), stdout(&examark(&["--version"])));
+    assert_eq!(stdout(&emark(&["-V"])), stdout(&emark(&["--version"])));
 }
 
 #[test]
 fn help_flag_prints_usage() {
-    let output = examark(&["--help"]);
+    let output = emark(&["--help"]);
 
     assert!(output.status.success());
     let text = stdout(&output);
@@ -119,7 +119,7 @@ fn help_flag_prints_usage() {
 
 #[test]
 fn no_arguments_prints_usage_and_exits_nonzero() {
-    let output = examark(&[]);
+    let output = emark(&[]);
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("用法"));
@@ -127,7 +127,7 @@ fn no_arguments_prints_usage_and_exits_nonzero() {
 
 #[test]
 fn unknown_command_exits_nonzero() {
-    let output = examark(&["不存在的命令"]);
+    let output = emark(&["不存在的命令"]);
 
     assert!(!output.status.success());
     assert!(!stderr(&output).is_empty());
@@ -227,13 +227,13 @@ fn image_references(html: &str) -> Vec<String> {
 #[test]
 fn build_reports_a_document_that_cannot_be_read() {
     let directory = TempDir::new("missing-document");
-    let missing = directory.path().join("不存在的文档.examark");
+    let missing = directory.path().join("不存在的文档.emark");
 
     let result = build_into(&missing, directory.path());
 
     assert!(!result.status.success());
     assert!(
-        stderr(&result).contains("不存在的文档.examark"),
+        stderr(&result).contains("不存在的文档.emark"),
         "错误应指出是哪个文档：{}",
         stderr(&result)
     );
@@ -242,7 +242,7 @@ fn build_reports_a_document_that_cannot_be_read() {
 #[test]
 fn build_reports_a_parse_error_with_its_line() {
     let directory = TempDir::new("parse-error");
-    let document = directory.path().join("常识.examark");
+    let document = directory.path().join("常识.emark");
     fs::write(&document, "@module 常识判断\n").expect("临时文档应可写");
 
     let result = build_into(&document, directory.path());
@@ -256,7 +256,7 @@ fn build_reports_a_parse_error_with_its_line() {
 #[test]
 fn build_reports_an_image_that_is_missing() {
     let directory = TempDir::new("missing-image");
-    let document = directory.path().join("缺图.examark");
+    let document = directory.path().join("缺图.emark");
     fs::write(&document, document_with_image("assets/不存在.png")).expect("临时文档应可写");
 
     let result = build_into(&document, directory.path());
@@ -273,7 +273,7 @@ fn build_reports_an_image_that_is_missing() {
 #[test]
 fn build_reports_two_images_that_share_a_file_name() {
     let directory = TempDir::new("clashing-images");
-    let document = directory.path().join("重名.examark");
+    let document = directory.path().join("重名.emark");
     fs::write(
         &document,
         document_with_image("甲/图示.png 与 @image{乙/图示.png}"),
@@ -292,7 +292,7 @@ fn build_reports_two_images_that_share_a_file_name() {
 fn build_defaults_to_the_dist_directory() {
     let directory = TempDir::new("default-output");
 
-    let result = examark_in(directory.path(), &["build", &fixture("图文文档.examark")]);
+    let result = emark_in(directory.path(), &["build", &fixture("图文文档.emark")]);
 
     assert!(result.status.success(), "stderr：{}", stderr(&result));
     assert!(
@@ -305,7 +305,7 @@ fn build_defaults_to_the_dist_directory() {
 
 #[test]
 fn build_without_a_document_is_a_usage_error() {
-    let result = examark(&["build"]);
+    let result = emark(&["build"]);
 
     assert!(!result.status.success());
     assert!(stderr(&result).contains("用法"), "{}", stderr(&result));
@@ -313,7 +313,7 @@ fn build_without_a_document_is_a_usage_error() {
 
 #[test]
 fn build_help_prints_usage() {
-    let result = examark(&["build", "--help"]);
+    let result = emark(&["build", "--help"]);
 
     assert!(result.status.success());
     assert!(stdout(&result).contains("-o"), "{}", stdout(&result));
@@ -329,7 +329,7 @@ fn document_with_image(images: &str) -> String {
 #[test]
 fn build_accepts_a_document_without_images() {
     let directory = TempDir::new("no-images");
-    let document = directory.path().join("纯文本.examark");
+    let document = directory.path().join("纯文本.emark");
     fs::write(
         &document,
         "@module 资料分析\n\n  @question\n    @stem 与上年同期相比增长了多少？\n    @option A 4.1%\n    @option B 5.3%\n    @option C 6.2%\n    @option D 7.0%\n    @answer C\n",
@@ -349,7 +349,7 @@ fn build_accepts_a_document_without_images() {
 
 #[test]
 fn help_lists_every_command() {
-    let text = stdout(&examark(&["--help"]));
+    let text = stdout(&emark(&["--help"]));
 
     for command in ["build", "watch", "preview", "toolchain"] {
         assert!(text.contains(command), "帮助应列出 {command}：{text}");
@@ -382,12 +382,12 @@ enum Stream {
 impl Session {
     /// 启动一个长驻命令。
     fn start(args: &[&str]) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_examark"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_emark"))
             .args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .expect("examark 二进制应可运行");
+            .expect("emark 二进制应可运行");
 
         let (sender, records) = mpsc::channel();
         let streams: [(Stream, Box<dyn Read + Send>); 2] = [
@@ -562,7 +562,7 @@ fn copy_directory(from: &Path, to: &Path) {
 
 /// 源目录里的题目文档。
 fn document_in(directory: &TempDir) -> PathBuf {
-    directory.path().join("图文文档.examark")
+    directory.path().join("图文文档.emark")
 }
 
 /// 路径的 `&str` 形式，用于拼命令参数。
@@ -581,7 +581,7 @@ fn save(document: &Path, from: &str, to: &str) {
 
 #[test]
 fn watch_without_a_document_is_a_usage_error() {
-    let result = examark(&["watch"]);
+    let result = emark(&["watch"]);
 
     assert!(!result.status.success());
     assert!(stderr(&result).contains("用法"), "{}", stderr(&result));
@@ -654,18 +654,18 @@ fn watch_keeps_watching_after_a_save_that_does_not_build() {
 #[test]
 fn watch_reports_a_document_that_cannot_be_read() {
     let directory = TempDir::new("watch-missing");
-    let missing = directory.path().join("不存在的文档.examark");
+    let missing = directory.path().join("不存在的文档.emark");
 
     let mut session = Session::start(&["watch", as_str(&missing), "-o", as_str(directory.path())]);
 
-    let message = session.wait_for(Stream::Err, "不存在的文档.examark");
+    let message = session.wait_for(Stream::Err, "不存在的文档.emark");
     assert!(message.contains("无法读取"), "{message}");
     assert_eq!(session.wait_for_exit().code(), Some(1));
 }
 
 #[test]
 fn preview_help_mentions_the_port_option() {
-    let text = stdout(&examark(&["preview", "--help"]));
+    let text = stdout(&emark(&["preview", "--help"]));
 
     assert!(text.contains("--port"), "{text}");
 }
@@ -700,7 +700,7 @@ fn preview_serves_the_built_document_at_the_root() {
 
     let mut session = Session::start(&[
         "preview",
-        &fixture("图文文档.examark"),
+        &fixture("图文文档.emark"),
         "-o",
         as_str(output.path()),
         "--port",
@@ -732,7 +732,7 @@ fn preview_serves_the_copied_assets() {
 
     let mut session = Session::start(&[
         "preview",
-        &fixture("图文文档.examark"),
+        &fixture("图文文档.emark"),
         "-o",
         as_str(output.path()),
         "--port",
@@ -757,7 +757,7 @@ fn preview_serves_chinese_file_names_that_browsers_percent_encode() {
 
     let mut session = Session::start(&[
         "preview",
-        &fixture("图文文档.examark"),
+        &fixture("图文文档.emark"),
         "-o",
         as_str(output.path()),
         "--port",
@@ -783,7 +783,7 @@ fn preview_refuses_to_serve_files_outside_the_output_directory() {
 
     let mut session = Session::start(&[
         "preview",
-        &fixture("图文文档.examark"),
+        &fixture("图文文档.emark"),
         "-o",
         as_str(&output),
         "--port",
@@ -815,7 +815,7 @@ fn preview_reports_a_port_that_is_already_taken() {
 
     let mut session = Session::start(&[
         "preview",
-        &fixture("图文文档.examark"),
+        &fixture("图文文档.emark"),
         "-o",
         as_str(output.path()),
         "--port",
@@ -830,7 +830,7 @@ fn preview_reports_a_port_that_is_already_taken() {
 #[test]
 fn preview_exits_when_the_document_cannot_be_built() {
     let directory = TempDir::new("preview-parse-error");
-    let document = directory.path().join("常识.examark");
+    let document = directory.path().join("常识.emark");
     fs::write(&document, "@module 常识判断\n").expect("文档应可写");
 
     let mut session = Session::start(&[
@@ -884,7 +884,7 @@ fn toolchain_builds_serves_and_rebuilds_in_one_process() {
 #[test]
 fn toolchain_reports_a_document_that_cannot_be_read() {
     let directory = TempDir::new("toolchain-missing");
-    let missing = directory.path().join("不存在的文档.examark");
+    let missing = directory.path().join("不存在的文档.emark");
 
     let mut session = Session::start(&[
         "toolchain",
@@ -895,7 +895,7 @@ fn toolchain_reports_a_document_that_cannot_be_read() {
         "0",
     ]);
 
-    let message = session.wait_for(Stream::Err, "不存在的文档.examark");
+    let message = session.wait_for(Stream::Err, "不存在的文档.emark");
     assert!(message.contains("无法读取"), "{message}");
     assert_eq!(session.wait_for_exit().code(), Some(1));
 }

@@ -1,7 +1,0 @@
-[package]
-name = "examark-syntax"
-description = "examark 格式的 AST、解析器与 HTML 渲染器"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]

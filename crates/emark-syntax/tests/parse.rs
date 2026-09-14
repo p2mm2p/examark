@@ -1,9 +1,9 @@
-//! `examark-syntax` 解析接缝的测试：字符串进，AST 出。
+//! `emark-syntax` 解析接缝的测试：字符串进，AST 出。
 //!
 //! 语法：`@module` 顶格，其下每深一级缩进 2 个空格；内容行比它的关键字深一级。
 //! 正文里的行内元素是 `@math{…}`、`@image{…}` 与裸 token `@blank`。
 
-use examark_syntax::{
+use emark_syntax::{
     Choice, Content, Document, Inline, MaterialQuestion, Module, ParseError, Question,
     SingleChoice, SubCategory, parse,
 };

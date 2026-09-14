@@ -1,4 +1,4 @@
-//! examark 文档的抽象语法树。
+//! emark 文档的抽象语法树。
 
 use crate::category::{Module, SubCategory};
 

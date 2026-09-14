@@ -1,11 +1,11 @@
-# examark 领域上下文
+# emark 领域上下文
 
-examark 是一种严格的、专用的、无歧义的纯文本格式，用于编写公务员行测题目文档并渲染为 HTML。仓库是一个 Cargo workspace，包含 `examark-syntax`（解析 + HTML 渲染）与 `examark-cli`（build/watch/preview/toolchain）两个 crate。
+emark 是一种严格的、专用的、无歧义的纯文本格式（文件扩展名 `.emark`），用于编写公务员行测题目文档并渲染为 HTML。仓库是一个 Cargo workspace，包含 `emark-syntax`（解析 + HTML 渲染）与 `emark-cli`（build/watch/preview/toolchain）两个 crate。
 
 ## 语言（词汇表）
 
 **题目文档**（question document）：
-一种采用 examark 格式的文件，容纳任意数量的题目（一套卷子、一份练习、一个合集）。它是编写与解析的基本单位。
+一种采用 emark 格式的文件，容纳任意数量的题目（一套卷子、一份练习、一个合集）。它是编写与解析的基本单位。
 _避免_：题库、题目集
 
 **卷子**（paper）：

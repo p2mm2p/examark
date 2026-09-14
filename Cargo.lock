@@ -3,12 +3,12 @@
 version = 4
 
 [[package]]
-name = "examark-cli"
+name = "emark-cli"
 version = "0.1.0"
 dependencies = [
- "examark-syntax",
+ "emark-syntax",
 ]
 
 [[package]]
-name = "examark-syntax"
+name = "emark-syntax"
 version = "0.1.0"
