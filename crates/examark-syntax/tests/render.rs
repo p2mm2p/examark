@@ -1,6 +1,10 @@
 //! `examark-syntax` 渲染接缝的测试：字符串进，HTML 出。
 //!
 //! golden 文件放在 `tests/golden/`：`<名字>.examark` 是源文档，`<名字>.html` 是期望输出。
+//! 真题语料放在 `tests/papers/`，同样是 `<名字>.examark` + `<名字>.html` 一对。
+//!
+//! 设了 `EXAMARK_UPDATE_GOLDEN` 时只重写 `.html` 而不比对——用来产出初版 golden，
+//! 平时不设，任何不一致都会硬失败。
 
 use std::cell::RefCell;
 use std::fs;
@@ -9,15 +13,32 @@ use std::path::PathBuf;
 use examark_syntax::{parse, render, render_with_assets};
 
 fn assert_golden(name: &str) {
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    assert_golden_in("golden", name);
+}
+
+/// 真题语料只覆盖渲染接缝：文档里的 `@image{…}` 指向不存在的文件是故意的，
+/// 资源拷贝与路径重写由 `examark-cli` 自己的测试负责。
+fn assert_paper(name: &str) {
+    assert_golden_in("papers", name);
+}
+
+fn assert_golden_in(directory: &str, name: &str) {
+    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join(directory);
     let source =
         fs::read_to_string(directory.join(format!("{name}.examark"))).expect("golden 源文档应存在");
-    let expected = fs::read_to_string(directory.join(format!("{name}.html")))
-        .expect("golden 期望 HTML 应存在");
 
     let document = parse(&source).expect("golden 源文档应解析成功");
     let html = render(&document);
 
+    let target = directory.join(format!("{name}.html"));
+    if std::env::var_os("EXAMARK_UPDATE_GOLDEN").is_some() {
+        fs::write(&target, &html).expect("重写 golden 期望 HTML 应成功");
+        return;
+    }
+
+    let expected = fs::read_to_string(&target).expect("golden 期望 HTML 应存在");
     assert_rendered(&html, &expected, name);
 }
 
@@ -66,6 +87,28 @@ fn renders_inline_math_images_and_blanks() {
 #[test]
 fn renders_a_material_question() {
     assert_golden("material");
+}
+
+/// 真题语料：只保留 v1 能表达的模块，题面公式已转写为 `@math`，
+/// 强调型下划线（v1 无语法）所在的题目整题排除。
+#[test]
+fn renders_the_provincial_paper() {
+    assert_paper("2026年国家公务员录用考试《行测》题（副省级网友回忆版）");
+}
+
+#[test]
+fn renders_the_municipal_paper() {
+    assert_paper("2026年国家公务员录用考试《行测》题（地市级网友回忆版）");
+}
+
+#[test]
+fn renders_the_law_enforcement_paper() {
+    assert_paper("2026年国家公务员录用考试《行测》题（行政执法卷网友回忆版）");
+}
+
+#[test]
+fn renders_the_guangdong_paper() {
+    assert_paper("2026年广东省公务员录用考试《行测》题（网友回忆版）");
 }
 
 /// 图片引用在 HTML 里写到哪里由调用方经映射决定：构建时用它把资源重写到输出目录。
